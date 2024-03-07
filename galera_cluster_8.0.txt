@@ -1,0 +1,156 @@
+#!/bin/bash
+apt update -y && apt upgrade -y
+systemctl stop ufw
+systemctl disable ufw
+
+apt install iptables-persistent -y
+sudo iptables -I INPUT 1 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+sudo iptables -I INPUT 2 -i lo -j ACCEPT
+
+# thêm rule cho phép ssh ở đây
+
+sudo iptables -P INPUT DROP
+sudo ip6tables -P INPUT DROP
+sudo iptables-save > /etc/iptables/rules.v4
+
+systemctl start iptables
+systemctl enable iptables
+
+apt-key adv --keyserver keyserver.ubuntu.com --recv 8DA84635
+
+echo 'deb https://releases.galeracluster.com/galera-4.17/ubuntu jammy main' | tee -a /etc/apt/sources.list.d/galera.list
+echo 'deb https://releases.galeracluster.com/mysql-wsrep-8.0.35-26.16/ubuntu jammy main' | tee -a /etc/apt/sources.list.d/galera.list
+
+
+echo '# Prefer Codership repository' | tee -a /etc/apt/preferences.d/galera.pref
+echo 'Package: *' | tee -a /etc/apt/preferences.d/galera.pref
+echo 'Pin: origin releases.galeracluster.com' | tee -a /etc/apt/preferences.d/galera.pref
+echo 'Pin-Priority: 1001' | tee -a /etc/apt/preferences.d/galera.pref
+
+apt update -y
+
+apt install galera-4 galera-arbitrator-4 mysql-wsrep-8.0 -y
+
+
+
+
+#iptables
+iptables -A INPUT -s 192.168.56.201/32 -p tcp --dport 3306 -j ACCEPT
+iptables -A INPUT -s 192.168.56.201/32 -p tcp --dport 4444 -j ACCEPT
+iptables -A INPUT -s 192.168.56.201/32 -p tcp --dport 4567 -j ACCEPT
+iptables -A INPUT -s 192.168.56.201/32 -p udp --dport 4567 -j ACCEPT
+iptables -A INPUT -s 192.168.56.201/32 -p tcp --dport 4568 -j ACCEPT
+
+iptables -A INPUT -s 192.168.56.202/32 -p tcp --dport 3306 -j ACCEPT
+iptables -A INPUT -s 192.168.56.202/32 -p tcp --dport 4444 -j ACCEPT
+iptables -A INPUT -s 192.168.56.202/32 -p tcp --dport 4567 -j ACCEPT
+iptables -A INPUT -s 192.168.56.202/32 -p udp --dport 4567 -j ACCEPT
+iptables -A INPUT -s 192.168.56.202/32 -p tcp --dport 4568 -j ACCEPT
+
+iptables -A INPUT -s 192.168.56.203/32 -p tcp --dport 3306 -j ACCEPT
+iptables -A INPUT -s 192.168.56.203/32 -p tcp --dport 4444 -j ACCEPT
+iptables -A INPUT -s 192.168.56.203/32 -p tcp --dport 4567 -j ACCEPT
+iptables -A INPUT -s 192.168.56.203/32 -p udp --dport 4567 -j ACCEPT
+iptables -A INPUT -s 192.168.56.203/32 -p tcp --dport 4568 -j ACCEPT
+
+iptables-save > /etc/iptables/rules.v4
+
+ln -s /etc/apparmor.d/usr.sbin.mysqld /etc/apparmor.d/disable/usr.sbin.mysqld
+apparmor_parser -R /etc/apparmor.d/usr.sbin.mysqld
+systemctl restart apparmor
+
+
+#thực hiện trên node 1
+
+echo '# vanchuan.kim added' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'binlog_format=ROW' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'default-storage-engine=innodb' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'innodb_autoinc_lock_mode=2' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'bind-address=0.0.0.0' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+
+echo '# Galera Provider Configuration' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_on=ON' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_provider=/usr/lib/galera/libgalera_smm.so' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+
+echo '# Galera Cluster Configuration' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_cluster_name="einvoice-db-cluster"' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_cluster_address="gcomm://192.168.56.201,192.168.56.202,192.168.56.203"' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+
+echo '# Galera Synchronization Configuration' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_sst_method=rsync' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+
+echo '# Galera Node Configuration' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_node_name=mysql1' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_node_address="192.168.56.201"' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+
+systemctl stop mysql
+systemctl enable mysql
+mysqld_bootstrap
+
+
+#thực hiện trên node 2
+
+echo '# vanchuan.kim added' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'binlog_format=ROW' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'default-storage-engine=innodb' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'innodb_autoinc_lock_mode=2' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'bind-address=0.0.0.0' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+
+echo '# Galera Provider Configuration' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_on=ON' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_provider=/usr/lib/galera/libgalera_smm.so' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+
+echo '# Galera Cluster Configuration' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_cluster_name="einvoice-db-cluster"' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_cluster_address="gcomm://192.168.56.202,192.168.56.201,192.168.56.203"' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+
+echo '# Galera Synchronization Configuration' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_sst_method=rsync' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+
+echo '# Galera Node Configuration' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_node_name=mysql1' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_node_address="192.168.56.202"' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+
+
+systemctl start mysql
+systemctl enable mysql
+
+#thực hiện trên node 3
+
+echo '# vanchuan.kim added' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'binlog_format=ROW' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'default-storage-engine=innodb' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'innodb_autoinc_lock_mode=2' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'bind-address=0.0.0.0' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+
+echo '# Galera Provider Configuration' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_on=ON' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_provider=/usr/lib/galera/libgalera_smm.so' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+
+echo '# Galera Cluster Configuration' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_cluster_name="einvoice-db-cluster"' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_cluster_address="gcomm://192.168.56.203,192.168.56.201,192.168.56.202"' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+
+echo '# Galera Synchronization Configuration' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_sst_method=rsync' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+
+echo '# Galera Node Configuration' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_node_name=mysql1' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+echo 'wsrep_node_address="192.168.56.203"' | tee -a /etc/mysql/mysql.conf.d/mysqld.cnf
+
+
+systemctl start mysql
+systemctl enable mysql
+
+
+
+#===============> LỆNH KIỂM TRA CLUSTER <====================
+# đứng trên node bất kì login vào mysql , chạy lệnh kiểm tra số node trong cụm
+mysql -u root -p #-> enter
+show status like 'wsrep_cluster_size';
+# tạo thử databse :
+create database test;
+# view danh sách databases
+show databases;
+
+
